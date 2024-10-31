@@ -1,0 +1,543 @@
+---
+title: "Model Formation"
+format: html
+editor: visual
+---
+
+import and clean the data
+
+```{r}
+
+library(tidyverse)
+library(janitor)
+library(ggplot2)
+library(zoo)
+library(rugarch)
+library(forecast)
+
+
+df <- read_csv('../data/filtered_ecmt3150_reef_unstacked.csv')
+
+
+# final cleaning and aggregate data to 10 second intervals
+aggregate_timestamps <- function(df, interval_seconds = 10, agg_function = mean) {
+  df <- df[5000:nrow(df),]
+  # Convert timestamp to POSIXct if not already
+  df$timestamp <- as.POSIXct(df$timestamp, tz="UTC")
+  
+  # Round timestamps to nearest interval
+  df$timestamp_rounded <- round(as.numeric(df$timestamp)/interval_seconds)*interval_seconds
+  df$timestamp_rounded <- as.POSIXct(df$timestamp_rounded, tz="UTC")
+  
+  # Group by rounded timestamp and calculate aggregation for all numeric columns
+  df <- df %>%
+    group_by(timestamp_rounded) %>%
+    summarise(
+      across(where(is.numeric), agg_function),
+      across(where(is.character), first)
+    ) %>%
+    ungroup()
+  
+  # Reset timestamp column
+  df$timestamp <- df$timestamp_rounded
+  df$timestamp_rounded <- NULL
+  
+  return(df)
+}
+
+# Aggregate data to 10-second intervals using mean
+df <- aggregate_timestamps(df, interval_seconds = 10, agg_function = last)
+
+
+
+```
+
+Create the cols we need
+
+```{r}
+
+
+df$bybit_mid = (df$Bybit_ask_price + df$Bybit_bid_price) / 2
+df$xt_mid = (df$XT_ask_price + df$XT_bid_price) / 2
+df$gateio_mid = (df$GateIO_ask_price_adjusted + df$GateIO_bid_price_adjusted) / 2
+
+df$bybit_gate_arbitrage_coefficient = df$bybit_mid / df$gateio_mid
+df$gate_xt_arbitrage_coefficient = df$xt_mid / df$gateio_mid
+
+
+df$bybit_mid_returns = c(NA, diff(log(df$bybit_mid)))
+df$xt_mid_returns = c(NA, diff(log(df$xt_mid))) 
+df$gateio_mid_returns = c(NA, diff(log(df$gateio_mid)))
+
+# Calculate returns of arbitrage coefficients
+df$bybit_gate_arbitrage_coefficient_returns = c(NA, diff(log(df$bybit_gate_arbitrage_coefficient)))
+df$gate_xt_arbitrage_coefficient_returns = c(NA, diff(log(df$gate_xt_arbitrage_coefficient)))
+
+
+# important
+df <- na.omit(df)
+
+```
+
+specify each garch model
+
+```{r}
+# 1. Standard GARCH(1,1)
+garch_spec_std <- ugarchspec(
+    variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+    mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+    distribution.model = "std"
+)
+
+# 2. EGARCH(1,1)
+garch_spec_e <- ugarchspec(
+    variance.model = list(model = "eGARCH", garchOrder = c(1, 1)),
+    mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+    distribution.model = "std"
+)
+
+# 3. GJR-GARCH(1,1)
+garch_spec_gjr <- ugarchspec(
+    variance.model = list(model = "gjrGARCH", garchOrder = c(1, 1)),
+    mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+    distribution.model = "std"
+)
+
+# 4. APARCH(1,1)
+garch_spec_ap <- ugarchspec(
+    variance.model = list(model = "apARCH", garchOrder = c(1, 1)),
+    mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+    distribution.model = "std"
+)
+
+# 5. IGARCH(1,1)
+garch_spec_i <- ugarchspec(
+    variance.model = list(model = "iGARCH", garchOrder = c(1, 1)),
+    mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+    distribution.model = "std"
+)
+
+
+
+
+
+```
+
+fit all the models and print results
+
+```{r}
+# Fit all models
+fit_std <- ugarchfit(spec = garch_spec_std, data = df$bybit_mid_returns, solver = "hybrid")
+fit_e <- ugarchfit(spec = garch_spec_e, data = df$bybit_mid_returns, solver = "hybrid")
+fit_gjr <- ugarchfit(spec = garch_spec_gjr, data = df$bybit_mid_returns, solver = "hybrid")
+fit_ap <- ugarchfit(spec = garch_spec_ap, data = df$bybit_mid_returns, solver = "hybrid")
+fit_i <- ugarchfit(spec = garch_spec_i, data = df$bybit_mid_returns, solver = "hybrid")
+
+
+cat("\nStandard GARCH(1,1):\n")
+cat("AIC:", infocriteria(fit_std)[1], "\n")
+cat("BIC:", infocriteria(fit_std)[2], "\n")
+cat("Log Likelihood:", likelihood(fit_std), "\n")
+
+cat("\nEGARCH(1,1):\n") 
+cat("AIC:", infocriteria(fit_e)[1], "\n")
+cat("BIC:", infocriteria(fit_e)[2], "\n")
+cat("Log Likelihood:", likelihood(fit_e), "\n")
+
+cat("\nGJR-GARCH(1,1):\n")
+cat("AIC:", infocriteria(fit_gjr)[1], "\n")
+cat("BIC:", infocriteria(fit_gjr)[2], "\n")
+cat("Log Likelihood:", likelihood(fit_gjr), "\n")
+
+cat("\nAPARCH(1,1):\n")
+cat("AIC:", infocriteria(fit_ap)[1], "\n")
+cat("BIC:", infocriteria(fit_ap)[2], "\n")
+cat("Log Likelihood:", likelihood(fit_ap), "\n")
+
+cat("\nIGARCH(1,1):\n")
+cat("AIC:", infocriteria(fit_i)[1], "\n")
+cat("BIC:", infocriteria(fit_i)[2], "\n")
+cat("Log Likelihood:", likelihood(fit_i), "\n")
+
+
+
+```
+
+specify each new garch model
+
+```{r}
+
+garch_spec_gjr_mean <- ugarchspec(
+    variance.model = list(
+        model = "gjrGARCH",
+        garchOrder = c(1, 1)
+    ),
+    mean.model = list(
+        armaOrder = c(1, 1),
+        include.mean = TRUE,
+        external.regressors = as.matrix(df$bybit_gate_arbitrage_coefficient_returns)
+    ),
+    distribution.model = "std"
+)
+
+
+garch_spec_gjr_var <- ugarchspec(
+    variance.model = list(
+        model = "gjrGARCH",
+        garchOrder = c(1, 1),
+        external.regressors = as.matrix(df$bybit_gate_arbitrage_coefficient_returns)
+    ),
+    mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+    distribution.model = "std"
+)
+
+
+garch_spec_gjr_both <- ugarchspec(
+    variance.model = list(
+        model = "gjrGARCH",
+        garchOrder = c(1, 1),
+        external.regressors = as.matrix(df$bybit_gate_arbitrage_coefficient_returns)
+    ),
+    mean.model = list(
+        armaOrder = c(1, 1),
+        include.mean = TRUE,
+        external.regressors = as.matrix(df$bybit_gate_arbitrage_coefficient_returns)
+    ),
+    distribution.model = "std"
+)
+
+
+
+
+# Fit the models
+fit_gjr_mean <- ugarchfit(spec = garch_spec_gjr_mean, 
+                         data = df$bybit_mid_returns,
+                         external.regressors = as.matrix(df$bybit_gate_arbitrage_coefficient_returns),
+                         solver = "hybrid")
+
+fit_gjr_var <- ugarchfit(spec = garch_spec_gjr_var, 
+                         data = df$bybit_mid_returns,
+                         external.regressors = as.matrix(df$bybit_gate_arbitrage_coefficient_returns),
+                         solver = "hybrid")
+
+
+
+fit_gjr_both <- ugarchfit(spec = garch_spec_gjr_both, 
+                         data = df$bybit_mid_returns,
+                         external.regressors = as.matrix(df$bybit_gate_arbitrage_coefficient_returns),
+                         solver = "hybrid")
+
+
+# print results
+cat("\nGJR-GARCH with arbitrage coefficient in mean equation:")
+cat("\nAIC:", infocriteria(fit_gjr_mean)[1])
+cat("\nBIC:", infocriteria(fit_gjr_mean)[2])
+cat("\nLog Likelihood:", likelihood(fit_gjr_mean))
+
+cat("\n\nGJR-GARCH with arbitrage coefficient in variance equation:")
+cat("\nAIC:", infocriteria(fit_gjr_var)[1])
+cat("\nBIC:", infocriteria(fit_gjr_var)[2]) 
+cat("\nLog Likelihood:", likelihood(fit_gjr_var))
+
+cat("\n\nGJR-GARCH with arbitrage coefficient in both equations:")
+cat("\nAIC:", infocriteria(fit_gjr_both)[1])
+cat("\nBIC:", infocriteria(fit_gjr_both)[2])
+cat("\nLog Likelihood:", likelihood(fit_gjr_both))
+
+
+
+
+
+```
+
+Plot the PACF of the residuals of the garch with coefficients in both mean and variance
+
+```{r}
+
+garch_fit <- fit_gjr_both
+
+# Plot PACF of residuals and save to file
+png("../graphs/pacf_residuals.png", width = 800, height = 600)  # Open PNG device
+pacf_residuals <- pacf(ts(residuals(garch_fit), frequency=1),
+                      main="PACF of Model Residuals", 
+                      lag.max=50,
+                      xlab="Lag",
+                      ylab="Partial Autocorrelation")
+dev.off()  # Close the PNG device
+
+```
+
+Forecast the returns using the garch with coefficients in both mean and variance. Use the fitted model, and forecast one step ahead using the last available window of data. In sample fit
+
+```{r}
+
+# Initialize storage for forecasts
+n_obs <- length(df$bybit_mid_returns)
+window_size <- 1000
+forecasts <- numeric(n_obs - window_size)
+sigmas <- numeric(n_obs - window_size)
+
+# Get the fitted parameters
+fitted_params <- coef(garch_fit)
+
+cat("\nStarting rolling forecasts using fitted parameters...\n")
+
+# Function to make one-step-ahead forecast using fitted parameters
+for(i in (window_size + 1):n_obs) {
+    # Get the window of data
+    window_data <- df$bybit_mid_returns[(i-window_size):(i-1)]
+    window_arb <- df$bybit_gate_arbitrage_coefficient_returns[(i-window_size):(i-1)]
+    
+    # Create forecast using fitted parameters
+    forecast_spec <- garch_spec_gjr_both
+    setfixed(forecast_spec) <- fitted_params
+    
+    # Filter with fixed parameters - now including external regressors
+    filter_fit <- ugarchfilter(
+        spec = forecast_spec,
+        data = window_data,
+        fixed.pars = fitted_params,
+        realizedVol = NULL,
+        external.regressors = as.matrix(window_arb)  # Add this line
+    )
+    
+    # Get the last fitted values
+    forecasts[i - window_size] <- fitted(filter_fit)[length(window_data)]
+    sigmas[i - window_size] <- sigma(filter_fit)[length(window_data)]
+    
+    # Print progress every 1000 observations
+    if(i %% 1000 == 0) {
+        cat(sprintf("Processed observation %d of %d\n", i, n_obs))
+    }
+}
+
+# Create results dataframe with aligned timestamps
+results_df <- data.frame(
+    timestamp = df$timestamp[(window_size + 1):n_obs],
+    actual_returns = df$bybit_mid_returns[(window_size + 1):n_obs],
+    forecast = forecasts,
+    sigma = sigmas
+)
+
+
+```
+
+Test out these predictions
+
+```{r}
+
+# # Lag the forecast by 1 period to align predictions with actual values
+# results_df$lagged_forecast <- c(NA, head(results_df$forecast, -1))
+# 
+# # Remove the first row which has NA for lagged forecast
+# results_df <- na.omit(results_df)
+# 
+# 
+# # Create scatter plot
+# ggplot(results_df, aes(x = forecast, y = actual_returns)) +
+#   geom_point(alpha = 0.1) +  # Set alpha for transparency due to potential overlapping
+#   labs(
+#     title = "Actual Returns vs Model Predictions",
+#     x = "Predicted Returns (Conditional Mean)",
+#     y = "Actual Returns"
+#   ) +
+#   theme_minimal() +
+#   geom_smooth(method = "lm", color = "blue", se = FALSE)  # Add trend line
+
+
+# Add fitted values from the GARCH model
+results_df$garch_fitted <- fitted(garch_fit)[(window_size + 1):nrow(df)]
+
+
+# Create scatter plot comparing actual returns to GARCH fitted values
+ggplot(results_df, aes(x = garch_fitted, y = actual_returns)) +
+  geom_point(alpha = 0.1) +
+  labs(
+    title = "Actual Returns vs GARCH Fitted Values",
+    x = "GARCH Fitted Values",
+    y = "Actual Returns"
+  ) +
+  theme_minimal() +
+  geom_smooth(method = "lm", color = "blue", se = FALSE)
+
+
+# regression stats
+summary(lm(actual_returns ~ garch_fitted, data = results_df))
+
+
+
+# Get conditional volatilities
+conditional_volatility <- sigma(garch_fit)
+
+# Get standardized residuals
+std_residuals <- residuals(garch_fit, standardize=TRUE)
+
+# Basic volatility statistics
+cat("Mean conditional volatility:", mean(conditional_volatility), "\n")
+cat("Max conditional volatility:", max(conditional_volatility), "\n")
+cat("Min conditional volatility:", min(conditional_volatility), "\n")
+
+# Plot conditional volatility
+plot(conditional_volatility, type="l", 
+     main="Conditional Volatility from GARCH Model",
+     ylab="Volatility", xlab="Time")
+
+
+
+
+
+```
+
+Fit an ARIMA model on the arbitrage coefficient returns to try to model/predict the arbitrage coefficient it's self
+
+```{r}
+
+# Fit ARIMA model on the arbitrage coefficient returns
+arima_arb_coef <- arima(df$bybit_gate_arbitrage_coefficient_returns,
+                        order = c(1,0,1))  # ARIMA(1,0,1) since we're using returns
+
+# Print model summary
+cat("\nARIMA model for arbitrage coefficient returns:\n")
+summary(arima_arb_coef)
+cat("\nAIC:", AIC(arima_arb_coef), "\n")
+
+# Get fitted values directly
+fitted_values <- fitted(arima_arb_coef)  # Changed from residuals to fitted
+
+# Create results dataframe
+arima_results_df <- data.frame(
+    actual = df$bybit_gate_arbitrage_coefficient_returns,
+    predicted = fitted_values
+)
+
+# Create scatter plot of predicted vs actual values
+ggplot(arima_results_df, aes(x = predicted, y = actual)) +
+    geom_point(alpha = 0.1) +
+    labs(
+        title = "Actual vs Predicted Arbitrage Coefficient Returns",
+        x = "Predicted Returns",
+        y = "Actual Returns"
+    ) +
+    theme_minimal() +
+    geom_smooth(method = "lm", color = "blue", se = FALSE)
+
+
+summary(lm(actual ~ predicted, data = arima_results_df))
+
+# Save the plot
+ggsave("../graphs/arima_predictions_scatter.png", width = 8, height = 6, dpi = 800)
+
+
+
+```
+
+Plots to use
+
+```{r}
+# Create plot comparing mid price and arbitrage coefficients
+# First calculate ranges for proper scaling
+bybit_range <- range(df$bybit_mid)
+arb_range <- range(c(df$bybit_gate_arbitrage_coefficient, df$gate_xt_arbitrage_coefficient))
+
+# Calculate scaling factor to align the two series
+scale_factor <- diff(bybit_range) / diff(arb_range)
+
+overall_plot = ggplot(df) +
+
+  # Arbitrage coefficients on right axis, scaled (plotted first and more transparent)
+  geom_line(aes(x = seq_along(bybit_gate_arbitrage_coefficient), 
+                y = (bybit_gate_arbitrage_coefficient - arb_range[1]) * scale_factor + bybit_range[1],
+                color = "Bybit/GateIO AC"), alpha = 0.6) +
+  
+  geom_line(aes(x = seq_along(gate_xt_arbitrage_coefficient), 
+                y = (gate_xt_arbitrage_coefficient - arb_range[1]) * scale_factor + bybit_range[1],
+                color = "GateIO/XT AC"), alpha = 0.6) +
+    # Bybit mid price on left axis (plotted last to appear on top)
+  geom_line(aes(x = seq_along(bybit_mid), y = bybit_mid, color = "Bybit Mid Price"), alpha = 0.8) +
+  
+  # Set up dual axes with proper scaling
+  scale_y_continuous(
+    name = "Bybit Mid Price",
+    sec.axis = sec_axis(
+      ~ (. - bybit_range[1]) / scale_factor + arb_range[1],
+      name = "Arbitrage Coefficient"
+    )
+  ) +
+  
+  scale_color_manual(values = c(
+    "Bybit Mid Price" = "red",
+    "Bybit/GateIO AC" = "blue3", 
+    "GateIO/XT AC" = "chartreuse4" 
+  )) +
+  
+  labs(
+    title = "Bybit Mid Price and Arbitrage Coefficients",
+    x = "Time Sequence",
+    color = "Series"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title.y.left = element_text(color = "red"),
+    axis.title.y.right = element_text(color = "black")
+  )
+overall_plot
+ggsave("../graphs/bybit_mid_price_and_acs.png", overall_plot, width = 12, height = 8)
+
+
+```
+
+More plots to use
+
+```{r}
+# Create plot comparing mid price and arbitrage coefficients
+# First calculate ranges for proper scaling
+bybit_range <- range(df$bybit_mid, na.rm = TRUE)
+arb_range <- range(df$bybit_gate_arbitrage_coefficient, na.rm = TRUE)
+
+# Ensure ranges are finite
+if (is.finite(bybit_range[1]) && is.finite(bybit_range[2]) && is.finite(arb_range[1]) && is.finite(arb_range[2])) {
+  # Calculate scaling factor to align the two series
+  scale_factor <- diff(bybit_range) / diff(arb_range)
+
+  overall_plot = ggplot(df) +
+
+    # Arbitrage coefficients on right axis, scaled (plotted first and more transparent)
+    geom_line(aes(x = seq_along(bybit_gate_arbitrage_coefficient), 
+                  y = (bybit_gate_arbitrage_coefficient - arb_range[1]) * scale_factor + bybit_range[1],
+                  color = "Bybit/GateIO AC"), alpha = 0.6) +
+    
+    # Bybit mid price on left axis (plotted last to appear on top)
+    geom_line(aes(x = seq_along(bybit_mid), y = bybit_mid, color = "Bybit Mid Price"), alpha = 0.8) +
+    
+    # Set up dual axes with proper scaling
+    scale_y_continuous(
+      name = "Bybit Mid Price",
+      sec.axis = sec_axis(
+        ~ (. - bybit_range[1]) / scale_factor + arb_range[1],
+        name = "Arbitrage Coefficient"
+      )
+    ) +
+    
+    scale_color_manual(values = c(
+      "Bybit Mid Price" = "red",
+      "Bybit/GateIO AC" = "blue3"
+    )) +
+    
+    labs(
+      title = "Bybit Mid Price and Arbitrage Coefficients",
+      x = "Time Sequence",
+      color = "Series"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.title.y.left = element_text(color = "red"),
+      axis.title.y.right = element_text(color = "black")
+    )
+  overall_plot
+  ggsave("../graphs/bybit_mid_price_and_acs2.png", overall_plot, width = 12, height = 8)
+} else {
+  cat("Error: Non-finite range values detected. Plot cannot be generated.\n")
+}
+
+
+```

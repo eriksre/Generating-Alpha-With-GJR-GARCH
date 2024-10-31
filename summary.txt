@@ -1,0 +1,25 @@
+
+
+(main algorithm bit)
+- Calculate 1000 period rolling average of Bybit/GateIO bid and Bybit/GateIO ask prices
+- Find the percentage difference of the current point from this rollong average
+- For bids, if the ratio is greater than the 35th percentile, replace with the last non-outlier value
+- For asks, if the ratio is less than the 65th percentile, replace with the last non-outlier value
+
+(negative spread bit)
+- Iterative algorithm to correct for negative spreads, and further outliers
+- If any negative spreads remain after initial cleaning (ask/bid < 1):
+  * Revert both ask and bid prices back to original values for those rows
+  * Increment bid threshold by 5 and decrement ask threshold by 5 (-5)
+- Calculate rolling average of bid/ask ratio using 50-point window
+- Calculate rolling percentiles of this average spread using 50-point window 
+- For points in bottom 5th percentile of spread:
+  * Calculate mean spread from rolling average
+  * symetrically increment bid and ask prices by the amount needed to match the mean spread of this rolling average
+
+- If any negative spreads remain after this process, repeat processbut using new thresholds
+- Repeat this loop 10 times
+- If any negative spreads remain after this process, revert to original prices for those rows (potentially could fix, but whatever)
+
+
+
