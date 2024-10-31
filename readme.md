@@ -27,7 +27,7 @@
 1. Clone the repo
 	- Alternatively, download manually via github.com
 ```
-git clone url
+git clone URL HERE
 ```
 2. Unzip the data folder 
 3. Open R studio
@@ -35,7 +35,7 @@ git clone url
 
 ##### Running the Code
 1. Run the install_libraries.R file to install any dependencies.
-2. (OPTIONAL) To re-create final dataset used in the analysis, run the apply_funding_rates.r file. The file already exists, so you do not have to re-create it. This simply exists as an option.
+2. (OPTIONAL / NOT NECESSARY) To re-create final dataset used in the analysis, run the clean_and_process.r file. The file already exists, so you do not have to re-create it. This exists simply as an option. Note, run times are long. Approx 20 mins on my computer. 
 3. To re-create the report results, run the create_and_test_models.qmd file.
 
 ---

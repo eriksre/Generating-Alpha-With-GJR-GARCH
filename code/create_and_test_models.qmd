@@ -1,5 +1,5 @@
 ---
-title: "Model Formation"
+title: "model_formation"
 format: html
 editor: visual
 ---
@@ -14,6 +14,7 @@ library(ggplot2)
 library(zoo)
 library(rugarch)
 library(forecast)
+
 
 
 df <- read_csv('../data/filtered_ecmt3150_reef_unstacked.csv')
@@ -534,7 +535,7 @@ if (is.finite(bybit_range[1]) && is.finite(bybit_range[2]) && is.finite(arb_rang
       axis.title.y.right = element_text(color = "black")
     )
   overall_plot
-  ggsave("../graphs/bybit_mid_price_and_acs2.png", overall_plot, width = 12, height = 8)
+  ggsave("/graphs/bybit_mid_price_and_acs2.png", overall_plot, width = 12, height = 8)
 } else {
   cat("Error: Non-finite range values detected. Plot cannot be generated.\n")
 }
