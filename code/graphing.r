@@ -6,7 +6,7 @@ library(rugarch)
 library(forecast)
 
 
-df <- read_csv('data/filtered_ecmt3150_reef_unstacked.csv')
+df <- read_csv('/data/filtered_ecmt3150_reef_unstacked.csv')
 #df <- df[10000:12000,]
 
 
@@ -19,7 +19,7 @@ aggregate_timestamps <- function(df, interval_seconds = 10, agg_function = mean)
   
   # Round timestamps to nearest interval
   df$timestamp_rounded <- round(as.numeric(df$timestamp)/interval_seconds)*interval_seconds
-  df$timestamp_rounded <- as.POSIXct(df$timestamp_rounded, tz="UTC")
+  df$timestamp_rounded <- as.POSIXct(df$timestamp_rounded, origin="1970-01-01", tz="UTC")
   
   # Group by rounded timestamp and calculate aggregation for all numeric columns
   df <- df %>%

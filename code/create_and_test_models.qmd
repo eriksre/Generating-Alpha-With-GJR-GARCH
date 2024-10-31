@@ -17,7 +17,7 @@ library(forecast)
 
 
 
-df <- read_csv('../data/filtered_ecmt3150_reef_unstacked.csv')
+df <- read_csv('/data/filtered_ecmt3150_reef_unstacked.csv')
 
 
 # final cleaning and aggregate data to 10 second intervals
@@ -258,7 +258,7 @@ Plot the PACF of the residuals of the garch with coefficients in both mean and v
 garch_fit <- fit_gjr_both
 
 # Plot PACF of residuals and save to file
-png("../graphs/pacf_residuals.png", width = 800, height = 600)  # Open PNG device
+png("/graphs/pacf_residuals.png", width = 800, height = 600)  # Open PNG device
 pacf_residuals <- pacf(ts(residuals(garch_fit), frequency=1),
                       main="PACF of Model Residuals", 
                       lag.max=50,
@@ -426,7 +426,7 @@ ggplot(arima_results_df, aes(x = predicted, y = actual)) +
 summary(lm(actual ~ predicted, data = arima_results_df))
 
 # Save the plot
-ggsave("../graphs/arima_predictions_scatter.png", width = 8, height = 6, dpi = 800)
+ggsave("/graphs/arima_predictions_scatter.png", width = 8, height = 6, dpi = 800)
 
 
 
@@ -482,7 +482,7 @@ overall_plot = ggplot(df) +
     axis.title.y.right = element_text(color = "black")
   )
 overall_plot
-ggsave("../graphs/bybit_mid_price_and_acs.png", overall_plot, width = 12, height = 8)
+ggsave("/graphs/bybit_mid_price_and_acs.png", overall_plot, width = 12, height = 8)
 
 
 ```
