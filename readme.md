@@ -27,7 +27,7 @@
 1. Clone the repo
 	- Alternatively, download manually via github.com
 ```
-git clone URL HERE
+git clone https://github.com/eriksre/Generating-Alpha-With-GJR-GARCH.git
 ```
 2. Unzip the data folder 
 3. Open R studio
