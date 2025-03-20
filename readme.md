@@ -51,13 +51,13 @@ In short, adding the arbitrage coefficient helps with predicting price direction
 ## Final References
 #### Final Report
 ```
-URL HERE
+https://docs.google.com/document/d/1QM6MUhAKpF5RskvtKc9izbPMqDCGf_nK3WuCqOJrTOI/edit?usp=sharing
 ```
 #### Video Presentation
 ```
-URL HERE
+https://www.youtube.com/watch?v=eepytRQKdCg
 ```
 #### Final Presentation Slide Deck
 ```
-URL HERE
+https://docs.google.com/presentation/d/1CRcqqYySXf7tPWflIOpPxLLDlT4hVXU7S3BJBNQT6pM/edit?usp=sharing
 ```
